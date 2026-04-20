@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Grafico 3D — z = f(x,y)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600&display=swap');
+
+:root {
+  --bg:      #0a0a0f;
+  --surface: #13131a;
+  --panel:   #1a1a24;
+  --border:  #2a2a3a;
+  --accent:  #00e5ff;
+  --accent2: #ff4d8d;
+  --accent3: #aaff80;
+  --text:    #e8e8f0;
+  --muted:   #6a6a8a;
+  --sidebar-w: 252px;
+  --header-h:  52px;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+  height: 100%; background: var(--bg); color: var(--text);
+  font-family: 'Sora', sans-serif; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+#header {
+  position: fixed; top:0; left:0; right:0;
+  height: var(--header-h);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  z-index: 100;
+}
+.logo {
+  font-family:'Space Mono',monospace; font-size:12px;
+  color:var(--accent); letter-spacing:.08em; white-space:nowrap; flex-shrink:0;
+}
+.logo span { color:var(--accent2); }
+.label-z {
+  font-family:'Space Mono',monospace; font-size:14px;
+  color:var(--accent); flex-shrink:0;
+}
+#funcInput {
+  flex:1; min-width:0;
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; color:var(--text);
+  font-family:'Space Mono',monospace; font-size:13px;
+  padding:7px 10px; outline:none; transition:border-color .2s;
+}
+#funcInput:focus { border-color:var(--accent); }
+#plotBtn {
+  background:var(--accent); color:#000; border:none; border-radius:6px;
+  font-family:'Sora',sans-serif; font-weight:600; font-size:12px;
+  padding:7px 13px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  transition:background .2s, transform .1s;
+}
+#plotBtn:hover  { background:#33eeff; }
+#plotBtn:active { transform:scale(.96); }
+#errorMsg {
+  font-size:11px; color:var(--accent2);
+  font-family:'Space Mono',monospace;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:120px; flex-shrink:1;
+}
+.hbtn {
+  width:34px; height:34px; flex-shrink:0;
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; color:var(--accent); font-size:16px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; user-select:none;
+  transition:background .2s, border-color .2s;
+}
+.hbtn:hover  { background:var(--border); border-color:var(--accent); }
+.hbtn:active { transform:scale(.93); }
+#saveBtn { color:var(--accent3); border-color:#2a3a2a; }
+#saveBtn:hover { border-color:var(--accent3); }
+#fsBtn { color:#c8aaff; border-color:#2a2a3a; }
+#fsBtn:hover { border-color:#c8aaff; }
+
+/* ── FULLSCREEN: hide header, canvas & sidebar fill viewport ── */
+:fullscreen            #header { display:none!important; }
+:-webkit-full-screen   #header { display:none!important; }
+:-moz-full-screen      #header { display:none!important; }
+:fullscreen            #canvas-wrap,
+:-webkit-full-screen   #canvas-wrap,
+:-moz-full-screen      #canvas-wrap { top:0!important; }
+:fullscreen            #sidebar,
+:-webkit-full-screen   #sidebar,
+:-moz-full-screen      #sidebar { top:0!important; }
+
+/* ── CANVAS ──────────────────────────────────────────────────── */
+#canvas-wrap {
+  position:fixed; top:var(--header-h); left:0; right:0; bottom:0;
+  cursor:grab; transition:right .28s cubic-bezier(.4,0,.2,1);
+}
+#canvas-wrap:active { cursor:grabbing; }
+#canvas-wrap.with-sidebar { right:var(--sidebar-w); }
+#threeCanvas { display:block; width:100%!important; height:100%!important; }
+
+/* ── SIDEBAR – desktop right panel ──────────────────────────── */
+#sidebar {
+  position:fixed; top:var(--header-h); right:0;
+  width:var(--sidebar-w); bottom:0;
+  background:var(--surface); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+  z-index:90;
+  transform:translateX(0);
+  transition:transform .28s cubic-bezier(.4,0,.2,1);
+}
+#sidebar.hidden { transform:translateX(100%); }
+
+#sidebar-scroll {
+  flex:1; overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+#sidebar-scroll::-webkit-scrollbar { width:4px; }
+#sidebar-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+/* sections */
+.section { padding:11px 13px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.section-title {
+  font-size:9px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--muted); font-weight:600; margin-bottom:9px;
+}
+.slider-group { margin-bottom:9px; }
+.slider-label { display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; }
+.slider-label span { color:var(--accent); font-family:'Space Mono',monospace; }
+
+input[type=range] {
+  -webkit-appearance:none; width:100%; height:4px;
+  background:var(--border); border-radius:2px; outline:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:18px; height:18px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+}
+input[type=range].pink::-webkit-slider-thumb  { background:var(--accent2); }
+input[type=range].green::-webkit-slider-thumb { background:var(--accent3); }
+
+.toggle-row {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:8px; min-height:30px;
+}
+.toggle-label { font-size:12px; }
+.toggle {
+  width:38px; height:22px; background:var(--border); border-radius:11px;
+  position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;
+}
+.toggle.on { background:var(--accent); }
+.toggle::after {
+  content:''; position:absolute; top:4px; left:4px;
+  width:14px; height:14px; border-radius:50%; background:#fff; transition:left .2s;
+}
+.toggle.on::after { left:20px; }
+
+.chip-group { display:flex; flex-wrap:wrap; gap:5px; }
+.chip {
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:4px; padding:5px 7px;
+  font-family:'Space Mono',monospace; font-size:10px;
+  color:var(--muted); cursor:pointer; user-select:none; transition:all .15s;
+}
+.chip:hover  { border-color:var(--accent); color:var(--accent); }
+.chip:active { background:var(--border); }
+
+.preset-btn {
+  display:block; width:100%;
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:5px; color:var(--text);
+  font-family:'Space Mono',monospace; font-size:10px;
+  padding:8px 10px; cursor:pointer; text-align:left;
+  margin-bottom:5px; min-height:34px; transition:all .15s;
+}
+.preset-btn:hover  { border-color:var(--accent2); color:var(--accent2); }
+.preset-btn:active { background:var(--border); }
+
+.color-row { display:flex; gap:7px; flex-wrap:wrap; }
+.color-swatch {
+  width:30px; height:30px; border-radius:50%;
+  border:2px solid transparent; cursor:pointer;
+  transition:border-color .15s, transform .15s;
+}
+.color-swatch:hover  { transform:scale(1.15); }
+.color-swatch.active { border-color:#fff; }
+
+.info-tag {
+  font-size:10px; color:var(--muted);
+  line-height:1.65; font-family:'Space Mono',monospace;
+}
+
+.range-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:6px 8px;
+  margin-bottom:4px;
+}
+.range-field { display:flex; flex-direction:column; gap:3px; }
+.range-field label {
+  font-size:10px; color:var(--muted);
+  font-family:'Space Mono',monospace; letter-spacing:.04em;
+}
+.range-field input[type=number] {
+  width:100%; background:var(--panel); border:1px solid var(--border);
+  border-radius:5px; color:var(--text);
+  font-family:'Space Mono',monospace; font-size:12px;
+  padding:5px 7px; outline:none; transition:border-color .2s;
+  -moz-appearance:textfield;
+}
+.range-field input[type=number]::-webkit-inner-spin-button,
+.range-field input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; }
+.range-field input[type=number]:focus { border-color:var(--accent); }
+.range-axis-label {
+  font-size:10px; font-family:'Space Mono',monospace;
+  color:var(--accent); margin-bottom:4px; margin-top:2px;
+}
+#statsBox {
+  font-size:11px; font-family:'Space Mono',monospace;
+  color:var(--muted); line-height:1.8;
+}
+#statsBox b { color:var(--accent3); }
+
+/* ── MOBILE: bottom sheet ────────────────────────────────────── */
+@media (max-width:640px) {
+  :root { --header-h:48px; }
+  .logo { display:none; }
+  #errorMsg { max-width:70px; }
+
+  #canvas-wrap,
+  #canvas-wrap.with-sidebar { right:0!important; bottom:0; }
+
+  #sidebar {
+    top:auto; bottom:0; left:0; right:0;
+    width:100%; height:62vh;
+    border-left:none; border-top:2px solid var(--accent);
+    border-radius:16px 16px 0 0;
+    transform:translateY(100%);
+  }
+  #sidebar.hidden  { transform:translateY(100%); }
+  #sidebar.visible { transform:translateY(0); }
+
+  #sidebar::before {
+    content:''; display:block;
+    width:40px; height:4px; background:var(--border);
+    border-radius:2px; margin:8px auto 2px; flex-shrink:0;
+  }
+}
+
+/* ── TABLET ──────────────────────────────────────────────────── */
+@media (min-width:641px) and (max-width:1023px) {
+  :root { --sidebar-w:220px; }
+}
+
+/* ── save flash ──────────────────────────────────────────────── */
+#saveFlash {
+  position:fixed; top:calc(var(--header-h)+10px); left:50%;
+  transform:translateX(-50%) scale(.9);
+  background:var(--accent3); color:#000;
+  font-family:'Sora',sans-serif; font-weight:600; font-size:13px;
+  padding:8px 22px; border-radius:20px;
+  pointer-events:none; opacity:0;
+  transition:opacity .25s, transform .25s;
+  z-index:200; white-space:nowrap;
+}
+#saveFlash.show { opacity:1; transform:translateX(-50%) scale(1); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">3D<span>PLOT</span></div>
+  <div class="label-z">z =</div>
+  <input id="funcInput" type="text" value="sin(sqrt(x*x + y*y))"
+         spellcheck="false" autocomplete="off" inputmode="text"/>
+  <button id="plotBtn">▶</button>
+  <div id="errorMsg"></div>
+  <div id="saveBtn"        class="hbtn" title="Salva immagine PNG">💾</div>
+  <div id="fsBtn"          class="hbtn" title="Schermo intero">⛶</div>
+  <div id="sidebarToggleBtn" class="hbtn" title="Pannello parametri">☰</div>
+</div>
+
+<!-- CANVAS -->
+<div id="canvas-wrap" class="with-sidebar">
+  <canvas id="threeCanvas"></canvas>
+</div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div id="sidebar-scroll">
+
+    <div class="section">
+      <div class="section-title">Rotazione &amp; Zoom</div>
+      <div class="slider-group">
+        <div class="slider-label">Rot. Orizzontale <span id="rotHVal">0°</span></div>
+        <input id="rotH" type="range" min="-180" max="180" value="0">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label">Rot. Verticale <span id="rotVVal">30°</span></div>
+        <input id="rotV" type="range" min="-89" max="89" value="30" class="pink">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label">Zoom <span id="zoomVal">1.0×</span></div>
+        <input id="zoom" type="range" min="5" max="200" value="40" class="green">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Dominio &amp; Risoluzione</div>
+      <div class="range-axis-label">── x ──────────────────</div>
+      <div class="range-grid">
+        <div class="range-field">
+          <label>x min</label>
+          <input id="xMin" type="number" value="-5" step="0.5">
+        </div>
+        <div class="range-field">
+          <label>x max</label>
+          <input id="xMax" type="number" value="5" step="0.5">
+        </div>
+      </div>
+      <div class="range-axis-label" style="margin-top:6px">── y ──────────────────</div>
+      <div class="range-grid">
+        <div class="range-field">
+          <label>y min</label>
+          <input id="yMin" type="number" value="-5" step="0.5">
+        </div>
+        <div class="range-field">
+          <label>y max</label>
+          <input id="yMax" type="number" value="5" step="0.5">
+        </div>
+      </div>
+      <div class="slider-group" style="margin-top:10px">
+        <div class="slider-label">Risoluzione <span id="resVal">60</span></div>
+        <input id="resSlider" type="range" min="10" max="120" value="60" class="green">
+      </div>
+      <div class="slider-group">
+        <div class="slider-label">Scala Z <span id="scaleZVal">1.0</span></div>
+        <input id="scaleZ" type="range" min="1" max="50" value="10" class="pink">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Aspetto</div>
+      <div class="toggle-row"><div class="toggle-label">Wireframe</div><div class="toggle" id="toggleWire"></div></div>
+      <div class="toggle-row"><div class="toggle-label">Assi</div><div class="toggle on" id="toggleAxes"></div></div>
+      <div class="toggle-row"><div class="toggle-label">Griglia base</div><div class="toggle on" id="toggleGrid"></div></div>
+      <div style="margin-top:6px">
+        <div class="section-title" style="margin-bottom:8px">Schema colori</div>
+        <div class="color-row" id="paletteRow"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Funzioni Rapide</div>
+      <div class="chip-group" id="snippets"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Preset</div>
+      <div id="presets"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Statistiche</div>
+      <div id="statsBox">—</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Sintassi</div>
+      <div class="info-tag">
+        Variabili: x, y<br>
+        Costanti: PI E PHI TAU<br>
+        Trig: sin cos tan<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;asin acos atan<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sinh cosh tanh<br>
+        Log/Exp: log log2 log10 exp<br><br>
+        <b style="color:var(--accent)">Potenza di funzione:</b><br>
+        &nbsp;sin^3(x) &nbsp; cos^2(y)<br>
+        &nbsp;log^4(x) &nbsp; tan^PI(y)<br>
+        &nbsp;sin^(x+1)(y) — esponente libero<br><br>
+        Potenza generica: x^2<br>
+        Altro: sqrt abs cbrt floor ceil<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;round sign<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;min(a,b) max(a,b)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mod(a,b) hypot(a,b)
+      </div>
+    </div>
+
+    <div style="height:20px;flex-shrink:0"></div>
+  </div>
+</div>
+
+<div id="saveFlash">✓ Immagine salvata</div>
+
+<script>
+// ════════════════ RESPONSIVE ════════════════
+function isMobile() { return window.innerWidth <= 640; }
+
+// ════════════════ CONSTANTS & PARSER ════════
+const CONSTANTS = {
+  PI:Math.PI, E:Math.E,
+  PHI:(1+Math.sqrt(5))/2,
+  TAU:2*Math.PI,
+  LN2:Math.LN2, LN10:Math.LN10, SQRT2:Math.SQRT2
+};
+
+function findClose(s,pos) {
+  let d=0;
+  for(let i=pos;i<s.length;i++){
+    if(s[i]==='(')d++; else if(s[i]===')'){d--;if(d===0)return i;}
+  }
+  return -1;
+}
+
+function expandPowers(s) {
+  const FNS=['atan2','log10','log2','asinh','acosh','atanh',
+             'asin','acos','atan','sinh','cosh','tanh',
+             'sin','cos','tan','sqrt','cbrt','abs','log','exp'];
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(const fn of FNS){
+      const re=new RegExp('\\b'+fn+'\\s*\\^\\s*','g');
+      let m;
+      while((m=re.exec(s))!==null){
+        const after=m.index+m[0].length;
+        let expoStr,expoEnd;
+        if(s[after]==='('){
+          const cl=findClose(s,after); if(cl===-1)break;
+          expoStr=s.slice(after,cl+1); expoEnd=cl+1;
+        } else {
+          const tok=s.slice(after).match(/^[A-Za-z_][A-Za-z_0-9]*|^[0-9]*\.?[0-9]+/);
+          if(!tok)break; expoStr=tok[0]; expoEnd=after+expoStr.length;
+        }
+        let argStart=expoEnd;
+        while(argStart<s.length&&s[argStart]===' ')argStart++;
+        if(s[argStart]!=='(')break;
+        const clArg=findClose(s,argStart); if(clArg===-1)break;
+        const argStr=s.slice(argStart,clArg+1);
+        s=s.slice(0,m.index)+`Math.pow(Math.${fn}${argStr},${expoStr})`+s.slice(clArg+1);
+        changed=true; break;
+      }
+      if(changed)break;
+    }
+  }
+  return s;
+}
+
+function buildFunc(expr) {
+  let s=expandPowers(expr);
+  s=s.replace(/\^/g,'**');
+  s=s.replace(/\bmod\b/g,'%');
+  for(const[k,v]of Object.entries(CONSTANTS))
+    s=s.replace(new RegExp('\\b'+k+'\\b','g'),String(v));
+  const FNS=['atan2','log10','log2','asinh','acosh','atanh',
+             'asin','acos','atan','sinh','cosh','tanh',
+             'sin','cos','tan','sqrt','cbrt','abs','log','exp',
+             'floor','ceil','round','sign','pow','min','max','hypot'];
+  for(const f of FNS)
+    s=s.replace(new RegExp('(?<!Math\\.)\\b'+f+'\\b','g'),'Math.'+f);
+  s=s.replace(/(\d)([a-zA-Z])/g,'$1*$2');
+  return new Function('x','y','"use strict";try{return('+s+');}catch(e){return NaN;}');
+}
+
+// ════════════════ DATA ══════════════════════
+const PALETTES=[
+  {name:'Plasma',lo:[.05,.05,.5], hi:[1,.2,.8]},
+  {name:'Ocean', lo:[0,.1,.4],    hi:[.1,1,.9]},
+  {name:'Fire',  lo:[.1,0,0],     hi:[1,.85,.1]},
+  {name:'Forest',lo:[0,.15,.05],  hi:[.5,1,.3]},
+  {name:'Mono',  lo:[.05,.05,.05],hi:[.95,.95,.95]},
+  {name:'Neon',  lo:[0,0,.1],     hi:[.1,1,.9]},
+];
+const PAL_COLORS=['#6600ff','#00a8ff','#ff3300','#00cc44','#aaaaaa','#00ffcc'];
+let activePalette=0;
+
+const PRESETS=[
+  {label:'Onda ripple',       fn:'sin(sqrt(x*x+y*y))'},
+  {label:'Sella iperbolica',  fn:'x*x - y*y'},
+  {label:'Gaussiana',         fn:'exp(-(x*x+y*y)/4)'},
+  {label:'Paraboloide',       fn:'(x*x+y*y)/8'},
+  {label:'sin·cos',           fn:'sin(x)*cos(y)'},
+  {label:'sin²+cos²',         fn:'sin^2(x)+cos^2(y)'},
+  {label:'sin³ radiale',      fn:'sin^3(sqrt(x*x+y*y))'},
+  {label:'log² distanza',     fn:'log^2(1+sqrt(x*x+y*y))'},
+  {label:'Interferenza',      fn:'sin(x)+sin(y)'},
+  {label:'Fiore trig',        fn:'sin(3*atan2(y,x))*exp(-(x*x+y*y)/10)'},
+  {label:'Ondina esponenz.',  fn:'sin(x*y)*exp(-(x*x+y*y)/20)'},
+  {label:'Monkey saddle',     fn:'x*x*x - 3*x*y*y'},
+  {label:'tan² smorzato',     fn:'tan^2(x)*exp(-(x*x+y*y)/15)'},
+  {label:'sinh·cosh',         fn:'sinh(x/3)*cosh(y/3)*0.1'},
+];
+
+const SNIPPETS=[
+  'sin','cos','tan','asin','acos','atan',
+  'sinh','cosh','tanh','exp','log','log2','log10',
+  'sqrt','abs','pow(,)','PI','E','PHI','TAU',
+  'min(,)','max(,)','floor','ceil','round'
+];
+
+// ════════════════ THREE.JS ══════════════════
+const canvas  =document.getElementById('threeCanvas');
+const cWrap   =document.getElementById('canvas-wrap');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0x0a0a0f);
+
+const scene =new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(45,1,.01,1000);
+scene.add(new THREE.AmbientLight(0xffffff,.45));
+const dl1=new THREE.DirectionalLight(0x00e5ff,.9); dl1.position.set(5,10,7);  scene.add(dl1);
+const dl2=new THREE.DirectionalLight(0xff4d8d,.5); dl2.position.set(-5,-3,-5); scene.add(dl2);
+
+let meshObj=null,wireObj=null,axesObj=null,gridObj=null;
+let showWire=false,showAxes=true,showGrid=true;
+let theta=0,phi=30*Math.PI/180,radius=4;
+
+function updateCamera(){
+  const cp=Math.cos(phi);
+  camera.position.set(radius*cp*Math.sin(theta),radius*Math.sin(phi),radius*cp*Math.cos(theta));
+  camera.lookAt(0,0,0);
+}
+updateCamera();
+
+function buildAxes(sz){
+  const g=new THREE.Group();
+  [[1,0,0,0xff4466],[0,1,0,0x44ff88],[0,0,1,0x4488ff]].forEach(([ax,ay,az,c])=>{
+    const geo=new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-ax*sz,-ay*sz,-az*sz),new THREE.Vector3(ax*sz,ay*sz,az*sz)]);
+    g.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:c})));
+  });
+  return g;
+}
+function buildBaseGrid(sz,divs){
+  const pts=[],step=sz*2/divs;
+  for(let i=0;i<=divs;i++){const v=-sz+i*step;pts.push(-sz,0,v,sz,0,v,v,0,-sz,v,0,sz);}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+  return new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x1a1a2e,transparent:true,opacity:.6}));
+}
+
+function buildMesh(fn,xMin,xMax,yMin,yMax,res,scaleZ){
+  const N=res;
+  const pos=new Float32Array(N*N*3),col=new Float32Array(N*N*3),idx=[];
+  let zmin=Infinity,zmax=-Infinity;
+  const zv=new Float32Array(N*N);
+  const xSpan=xMax-xMin, ySpan=yMax-yMin;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+    const x=xMin+xSpan*i/(N-1), y=yMin+ySpan*j/(N-1);
+    let z=fn(x,y);if(!isFinite(z)||isNaN(z))z=0;
+    zv[i*N+j]=z;if(z<zmin)zmin=z;if(z>zmax)zmax=z;
+  }
+  // normalise to [-1,1] on both axes for display
+  const xCenter=(xMin+xMax)/2, yCenter=(yMin+yMax)/2;
+  const xyScale=Math.max(xSpan,ySpan)/2||1;
+  const span=(zmax-zmin)||1, zs=scaleZ/span/xyScale, pal=PALETTES[activePalette];
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+    const id=i*N+j, z=zv[id], t=(z-zmin)/span;
+    pos[id*3]  =(xMin+xSpan*i/(N-1)-xCenter)/xyScale;
+    pos[id*3+1]=(z-(zmin+zmax)/2)*zs;
+    pos[id*3+2]=(yMin+ySpan*j/(N-1)-yCenter)/xyScale;
+    col[id*3]  =pal.lo[0]+(pal.hi[0]-pal.lo[0])*t;
+    col[id*3+1]=pal.lo[1]+(pal.hi[1]-pal.lo[1])*t;
+    col[id*3+2]=pal.lo[2]+(pal.hi[2]-pal.lo[2])*t;
+  }
+  for(let i=0;i<N-1;i++)for(let j=0;j<N-1;j++){
+    const a=i*N+j,b=a+1,c=(i+1)*N+j,d=c+1;idx.push(a,b,d,a,d,c);
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  geo.setIndex(idx);geo.computeVertexNormals();
+  return{
+    mesh:new THREE.Mesh(geo,new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide,shininess:60,specular:0x222244})),
+    wire:new THREE.Mesh(geo.clone(),new THREE.MeshBasicMaterial({vertexColors:true,wireframe:true,transparent:true,opacity:.25})),
+    zmin,zmax,N
+  };
+}
+
+function replot(){
+  const expr=document.getElementById('funcInput').value.trim();
+  const errEl=document.getElementById('errorMsg');
+  errEl.textContent='';
+  let fn;
+  try{fn=buildFunc(expr);fn(0,0);}catch(e){errEl.textContent='⚠ Errore';return;}
+  let xMin=parseFloat(document.getElementById('xMin').value);
+  let xMax=parseFloat(document.getElementById('xMax').value);
+  let yMin=parseFloat(document.getElementById('yMin').value);
+  let yMax=parseFloat(document.getElementById('yMax').value);
+  // fallback / sanity
+  if(isNaN(xMin))xMin=-5; if(isNaN(xMax))xMax=5;
+  if(isNaN(yMin))yMin=-5; if(isNaN(yMax))yMax=5;
+  if(xMin>=xMax){errEl.textContent='⚠ x: min≥max';return;}
+  if(yMin>=yMax){errEl.textContent='⚠ y: min≥max';return;}
+  const res  =parseInt  (document.getElementById('resSlider').value);
+  const scaleZ=parseFloat(document.getElementById('scaleZ').value);
+  if(meshObj){scene.remove(meshObj);meshObj.geometry.dispose();}
+  if(wireObj){scene.remove(wireObj);wireObj.geometry.dispose();}
+  if(axesObj)scene.remove(axesObj);
+  if(gridObj)scene.remove(gridObj);
+  try{
+    const b=buildMesh(fn,xMin,xMax,yMin,yMax,res,scaleZ);
+    meshObj=b.mesh;wireObj=b.wire;
+    if(!showWire)scene.add(meshObj);else scene.add(wireObj);
+    axesObj=buildAxes(1.2);
+    gridObj=buildBaseGrid(1,10);
+    gridObj.position.y=-(b.zmax-(b.zmin+b.zmax)/2)*scaleZ/((Math.max(xMax-xMin,yMax-yMin)/2)||1)/((Math.max(xMax-xMin,yMax-yMin)/2)||1)-.01;
+    if(showAxes)scene.add(axesObj);
+    if(showGrid)scene.add(gridObj);
+    document.getElementById('statsBox').innerHTML=
+      `<b>z min:</b> ${b.zmin.toFixed(4)}<br><b>z max:</b> ${b.zmax.toFixed(4)}<br>`+
+      `<b>Δz:</b> ${(b.zmax-b.zmin).toFixed(4)}<br><b>Punti:</b> ${b.N*b.N}`;
+  }catch(e){errEl.textContent='⚠ Errore calcolo';}
+}
+
+// ════════════════ SLIDER CONTROLS ══════════
+const rotH=document.getElementById('rotH'),rotV=document.getElementById('rotV'),zoomR=document.getElementById('zoom');
+function syncSliders(){
+  theta=parseFloat(rotH.value)*Math.PI/180;
+  phi  =parseFloat(rotV.value)*Math.PI/180;
+  radius=100/parseFloat(zoomR.value);
+  document.getElementById('rotHVal').textContent=rotH.value+'°';
+  document.getElementById('rotVVal').textContent=rotV.value+'°';
+  document.getElementById('zoomVal').textContent=(parseFloat(zoomR.value)/10).toFixed(1)+'×';
+  updateCamera();
+}
+rotH.addEventListener('input',syncSliders);
+rotV.addEventListener('input',syncSliders);
+zoomR.addEventListener('input',syncSliders);
+document.getElementById('resSlider')  .addEventListener('input',e=>{document.getElementById('resVal').textContent=e.target.value;replot();});
+document.getElementById('scaleZ')     .addEventListener('input',e=>{document.getElementById('scaleZVal').textContent=(e.target.value/10).toFixed(1);replot();});
+['xMin','xMax','yMin','yMax'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',replot);
+  document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')replot();});
+});
+document.getElementById('plotBtn').addEventListener('click',replot);
+document.getElementById('funcInput').addEventListener('keydown',e=>{if(e.key==='Enter')replot();});
+
+// ════════════════ TOGGLES ═══════════════════
+function makeToggle(id,init,cb){
+  let st=init;const el=document.getElementById(id);
+  if(st)el.classList.add('on');
+  el.addEventListener('click',()=>{st=!st;el.classList.toggle('on',st);cb(st);});
+}
+makeToggle('toggleWire',false,v=>{showWire=v;if(meshObj){if(v){scene.remove(meshObj);scene.add(wireObj);}else{scene.remove(wireObj);scene.add(meshObj);}}});
+makeToggle('toggleAxes',true, v=>{showAxes=v;if(axesObj){if(v)scene.add(axesObj);else scene.remove(axesObj);}});
+makeToggle('toggleGrid',true, v=>{showGrid=v;if(gridObj){if(v)scene.add(gridObj);else scene.remove(gridObj);}});
+
+// ════════════════ PALETTE ═══════════════════
+PAL_COLORS.forEach((c,i)=>{
+  const sw=document.createElement('div');
+  sw.className='color-swatch'+(i===0?' active':'');
+  sw.style.background=c;sw.title=PALETTES[i].name;
+  sw.addEventListener('click',()=>{
+    document.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('active'));
+    sw.classList.add('active');activePalette=i;replot();
+  });
+  document.getElementById('paletteRow').appendChild(sw);
+});
+
+// ════════════════ SNIPPETS ══════════════════
+SNIPPETS.forEach(s=>{
+  const ch=document.createElement('div');ch.className='chip';ch.textContent=s;
+  ch.addEventListener('click',()=>{
+    const inp=document.getElementById('funcInput'),pos=inp.selectionStart,val=inp.value;
+    inp.value=val.slice(0,pos)+s+val.slice(pos);
+    inp.selectionStart=inp.selectionEnd=pos+s.length;inp.focus();
+  });
+  document.getElementById('snippets').appendChild(ch);
+});
+
+// ════════════════ PRESETS ═══════════════════
+PRESETS.forEach(p=>{
+  const btn=document.createElement('button');btn.className='preset-btn';btn.textContent=p.label;
+  btn.addEventListener('click',()=>{document.getElementById('funcInput').value=p.fn;replot();});
+  document.getElementById('presets').appendChild(btn);
+});
+
+// ════════════════ SIDEBAR TOGGLE ════════════
+const sidebar=document.getElementById('sidebar');
+const sidebarBtn=document.getElementById('sidebarToggleBtn');
+let sidebarOpen=true;
+
+function setSidebar(open){
+  sidebarOpen=open;
+  if(isMobile()){
+    cWrap.classList.remove('with-sidebar');
+    sidebar.classList.toggle('visible',open);
+    sidebar.classList.toggle('hidden',!open);
+  } else {
+    sidebar.classList.toggle('hidden',!open);
+    cWrap.classList.toggle('with-sidebar',open);
+  }
+  sidebarBtn.textContent=open?'✕':'☰';
+  setTimeout(resize,300);
+}
+
+sidebarBtn.addEventListener('click',()=>setSidebar(!sidebarOpen));
+// tap canvas on mobile to dismiss sidebar
+cWrap.addEventListener('pointerdown',()=>{if(isMobile()&&sidebarOpen)setSidebar(false);},{capture:true,passive:true});
+
+// ════════════════ SAVE IMAGE ════════════════
+document.getElementById('saveBtn').addEventListener('click',()=>{
+  renderer.render(scene,camera);
+  const url=canvas.toDataURL('image/png');
+  const a=document.createElement('a');
+  const name='grafico3d_'+document.getElementById('funcInput').value.replace(/[^a-zA-Z0-9_]/g,'_').slice(0,28)+'.png';
+  a.download=name;a.href=url;a.click();
+  const fl=document.getElementById('saveFlash');
+  fl.classList.add('show');
+  setTimeout(()=>fl.classList.remove('show'),1800);
+});
+
+// ════════════════ DRAG / TOUCH ORBIT ════════
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;
+  theta+=dx*.01;phi-=dy*.01;
+  phi=Math.max(-Math.PI/2+.01,Math.min(Math.PI/2-.01,phi));
+  rotH.value=Math.round(theta*180/Math.PI);
+  rotV.value=Math.round(phi*180/Math.PI);
+  document.getElementById('rotHVal').textContent=rotH.value+'°';
+  document.getElementById('rotVVal').textContent=rotV.value+'°';
+  updateCamera();
+});
+
+let touchId=null;
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    touchId=e.touches[0].identifier;
+    lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;dragging=true;
+  }
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  if(!dragging)return;
+  for(const t of e.touches){
+    if(t.identifier===touchId){
+      const dx=t.clientX-lastX,dy=t.clientY-lastY;
+      lastX=t.clientX;lastY=t.clientY;
+      theta+=dx*.01;phi-=dy*.01;
+      phi=Math.max(-Math.PI/2+.01,Math.min(Math.PI/2-.01,phi));
+      rotH.value=Math.round(theta*180/Math.PI);rotV.value=Math.round(phi*180/Math.PI);
+      document.getElementById('rotHVal').textContent=rotH.value+'°';
+      document.getElementById('rotVVal').textContent=rotV.value+'°';
+      updateCamera();break;
+    }
+  }
+  e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchend',()=>{dragging=false;touchId=null;});
+
+// pinch zoom
+let lastPinch=null;
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    lastPinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    dragging=false;
+  }
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  if(e.touches.length===2&&lastPinch!==null){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    radius*=lastPinch/d;radius=Math.max(.5,Math.min(20,radius));
+    zoomR.value=Math.round(100/radius);
+    document.getElementById('zoomVal').textContent=(parseFloat(zoomR.value)/10).toFixed(1)+'×';
+    updateCamera();lastPinch=d;e.preventDefault();
+  }
+},{passive:false});
+canvas.addEventListener('touchend',e=>{if(e.touches.length<2)lastPinch=null;});
+
+canvas.addEventListener('wheel',e=>{
+  radius*=1+e.deltaY*.001;radius=Math.max(.5,Math.min(20,radius));
+  zoomR.value=Math.round(100/radius);
+  document.getElementById('zoomVal').textContent=(parseFloat(zoomR.value)/10).toFixed(1)+'×';
+  updateCamera();e.preventDefault();
+},{passive:false});
+
+// ════════════════ RESIZE ════════════════════
+function resize(){
+  const w=cWrap.clientWidth,h=cWrap.clientHeight;
+  renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',()=>{
+  if(!isMobile()){
+    sidebar.classList.remove('visible');
+    if(sidebarOpen){sidebar.classList.remove('hidden');cWrap.classList.add('with-sidebar');}
+  }
+  resize();
+});
+
+// ════════════════ ANIMATE ═══════════════════
+(function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
+
+// ════════════════ FULLSCREEN ════════════════
+const fsBtn = document.getElementById('fsBtn');
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+}
+
+function requestFS() {
+  const el = document.documentElement;
+  if      (el.requestFullscreen)       el.requestFullscreen();
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
+}
+
+function exitFS() {
+  if      (document.exitFullscreen)       document.exitFullscreen();
+  else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  else if (document.mozCancelFullScreen)  document.mozCancelFullScreen();
+}
+
+fsBtn.addEventListener('click', () => {
+  if (isFullscreen()) exitFS(); else requestFS();
+});
+
+function onFSChange() {
+  const full = isFullscreen();
+  fsBtn.textContent = full ? '⊡' : '⛶';
+  fsBtn.title       = full ? 'Esci da schermo intero' : 'Schermo intero';
+  setTimeout(resize, 50); // let CSS settle then refit canvas
+}
+document.addEventListener('fullscreenchange',       onFSChange);
+document.addEventListener('webkitfullscreenchange', onFSChange);
+document.addEventListener('mozfullscreenchange',    onFSChange);
+
+// ════════════════ INIT ══════════════════════
+if(isMobile())setSidebar(false);
+resize();
+replot();
+</script>
+</body>
+</html>
