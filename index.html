@@ -4,7 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Grafico 3D — z = f(x,y)</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<meta name="theme-color" content="#0a0a0f">
+<meta name="application-name" content="Grafico 3D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<script src="./vendor/three.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600&display=swap');
 
@@ -280,6 +288,7 @@ input[type=range].green::-webkit-slider-thumb { background:var(--accent3); }
   <button id="plotBtn">▶</button>
   <div id="errorMsg"></div>
   <div id="saveBtn"        class="hbtn" title="Salva immagine PNG">💾</div>
+  <div id="installBtn" class="hbtn" title="Installa applicazione" style="display:none">⬇</div>
   <div id="fsBtn"          class="hbtn" title="Schermo intero">⛶</div>
   <div id="sidebarToggleBtn" class="hbtn" title="Pannello parametri">☰</div>
 </div>
@@ -836,6 +845,32 @@ document.addEventListener('mozfullscreenchange',    onFSChange);
 if(isMobile())setSidebar(false);
 resize();
 replot();
+</script>
+<script>
+// Installazione PWA — disponibile solo se il browser autorizza il prompt.
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installEvent = event;
+  document.getElementById('installBtn').style.display = 'flex';
+});
+document.getElementById('installBtn').addEventListener('click', async () => {
+  if (!installEvent) return;
+  const event = installEvent;
+  installEvent = null;
+  document.getElementById('installBtn').style.display = 'none';
+  await event.prompt();
+});
+window.addEventListener('appinstalled', () => {
+  installEvent = null;
+  document.getElementById('installBtn').style.display = 'none';
+});
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', {scope:'./'})
+      .catch(error => console.warn('PWA: service worker non registrato', error));
+  });
+}
 </script>
 </body>
 </html>
